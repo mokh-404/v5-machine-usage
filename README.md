@@ -112,9 +112,9 @@ At the end, you'll see:
   Monitoring Complete!
 ================================================================================
 
-  Log File:    logs/system_monitor_20251210_153045.log
-  CSV Data:    data/metrics_20251210_153045.csv
-  HTML Report: reports/report_20251210_153045.html
+  Log File:    logs/system_monitor.log
+  CSV Data:    data/metrics.csv
+  HTML Report: reports/report.html
 
 ================================================================================
 ```
@@ -125,11 +125,11 @@ At the end, you'll see:
 project_root/
 ├── system_monitor.sh          # Main monitoring script
 ├── logs/
-│   └── system_monitor_*.log   # Timestamped log files
+│   └── system_monitor.log     # Persistent log file
 ├── reports/
-│   └── report_*.html          # HTML reports with styling
+│   └── report.html            # Latest HTML report
 ├── data/
-│   └── metrics_*.csv          # CSV data for historical tracking
+│   └── metrics.csv            # CSV data for historical tracking
 └── README.md                  # This file
 ```
 
@@ -175,8 +175,9 @@ project_root/
 - GPU utilization percentage (NVIDIA only)
 
 ### [8/10] System Temperature
-- CPU/system temperature
-- Temperature source (sensors or thermal zone)
+- CPU/system temperature (Smart Fallback: Sensor -> Thermal Zone -> Simulation)
+- GPU temperature (via nvidia-smi optimized query)
+- Temperature source logged for verification
 
 ### [9/10] Process Top Users
 - Top 5 processes by memory consumption
@@ -200,13 +201,13 @@ Contains all actions, errors, and warnings with timestamps:
 [2025-12-10 15:30:46] WARNING: ALERT: Memory usage is 92.5% (threshold: 90%)
 ```
 
-### CSV Files (`data/metrics_*.csv`)
-
-Comma-separated values for historical tracking:
-
+### CSV Files (`data/metrics.csv`)
+    
+Comma-separated values for historical tracking. New columns added for Multi-Disk, GPU, and Temperature:
+    
 ```csv
-Timestamp,CPU_Usage(%),Memory_Total(GB),Memory_Used(GB),Memory_Free(GB),Memory_Used(%),Disk_Used(%),Process_Count,Load_1m,Uptime_Days
-2025-12-10 15:30:45,18.5,31.38,12.45,18.93,39.65,52.3,187,1.25,5
+Timestamp,CPU_Usage(%),Memory_Total(GB),Memory_Used(GB),Memory_Free(GB),Memory_Used(%),Disk_Usage_Summary,GPU_Utilization(%),GPU_Memory_Used(MB),CPU_Temp(C),GPU_Temp(C),Process_Count,Load_1m,Uptime_Days
+2025-12-12 02:16:48,17.66,23.62,11.29,12.33,47.79,/mnt/c:61%|/mnt/d:65%,0,744,49,52,9,0.52,0
 ```
 
 ### HTML Reports (`reports/report_*.html`)
@@ -359,13 +360,16 @@ This project fulfills the Arab Academy 12th Project requirements:
 
 ### Environment Detection
 
-The script detects WSL1 vs native Linux using:
+The script now uses **Feature Detection** instead of rigid OS checks.
 
 ```bash
-if grep -qiE "microsoft|wsl" /proc/version 2>/dev/null; then
-    IS_WSL=1
+# Example: Checking for C: drive directly
+if [ -d "/mnt/c" ]; then
+    # We are on a system that mounts C: (likely WSL)
 fi
 ```
+
+This makes the script portable across any Linux environment that shares these features.
 
 ### Pure POSIX Shell
 

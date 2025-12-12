@@ -12,27 +12,9 @@ LOG_DIR="${SCRIPT_DIR}/logs"
 REPORT_DIR="${SCRIPT_DIR}/reports"
 DATA_DIR="${SCRIPT_DIR}/data"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-LOG_FILE="${LOG_DIR}/system_monitor_${TIMESTAMP}.log"
-CSV_FILE="${DATA_DIR}/metrics_${TIMESTAMP}.csv"
-HTML_REPORT="${REPORT_DIR}/report_${TIMESTAMP}.html"
-
-# Environment detection
-IS_WSL=0
-WSL_VERSION=""
-if grep -qiE "microsoft|wsl" /proc/version 2>/dev/null; then
-    IS_WSL=1
-    # Detect WSL1 vs WSL2
-    # WSL2 has "microsoft-standard-WSL2" in kernel version
-    # WSL1 has different kernel signature
-    local kernel_release=$(cat /proc/sys/kernel/osrelease 2>/dev/null || echo "")
-    if echo "$kernel_release" | grep -qi "WSL2\|microsoft.*WSL2"; then
-        WSL_VERSION="WSL2"
-    elif echo "$kernel_release" | grep -qi "microsoft"; then
-        WSL_VERSION="WSL1"
-    else
-        WSL_VERSION="WSL1"  # Default assumption
-    fi
-fi
+LOG_FILE="${LOG_DIR}/system_monitor.log"
+CSV_FILE="${DATA_DIR}/metrics.csv"
+HTML_REPORT="${REPORT_DIR}/report.html"
 
 # Global metric storage (pipe-delimited format)
 declare -A METRICS
@@ -91,13 +73,20 @@ display_header() {
     echo "================================================================================"
     echo ""
     
-    if [ $IS_WSL -eq 1 ]; then
-        if [ -n "$WSL_VERSION" ]; then
-            echo "  Environment: $WSL_VERSION (Windows Subsystem for Linux)"
-        else
-            echo "  Environment: WSL (Windows Subsystem for Linux)"
+    # Detect Environment (Local Check)
+    if grep -qEi "(microsoft|wsl)" /proc/version 2>/dev/null; then
+        local kernel_release=$(cat /proc/sys/kernel/osrelease 2>/dev/null || echo "")
+        local wsl_ver_disp="WSL"
+        
+        if echo "$kernel_release" | grep -qi "WSL2\|microsoft.*WSL2"; then
+            wsl_ver_disp="WSL2"
+        elif echo "$kernel_release" | grep -qi "microsoft"; then
+            wsl_ver_disp="WSL1"
         fi
-        if [ "$WSL_VERSION" = "WSL2" ]; then
+        
+        echo "  Environment: $wsl_ver_disp (Windows Subsystem for Linux)"
+        
+        if [ "$wsl_ver_disp" = "WSL2" ]; then
             echo ""
             echo "  ⚠ WARNING: WSL2 detected! Memory shown will be VM virtual memory, not Windows host memory."
             echo "  ⚠ For real Windows host memory, convert to WSL1: wsl --set-version <distro> 1"
@@ -221,10 +210,13 @@ collect_memory_metrics() {
     
     # Check if we're on WSL2 or if memory seems limited (WSL1 should show real Windows host memory)
     local memory_warning=""
-    if [ $IS_WSL -eq 1 ]; then
-        if [ "$WSL_VERSION" = "WSL2" ]; then
-            memory_warning="WARNING: Detected WSL2 - Memory shown is VM virtual memory, not Windows host memory. Convert to WSL1 for real host memory access."
-            log_warning "$memory_warning"
+    # Check if we're on WSL (approximate check for warnings)
+    if grep -qEi "(microsoft|wsl)" /proc/version 2>/dev/null; then
+        local kernel_release=$(cat /proc/sys/kernel/osrelease 2>/dev/null || echo "")
+        
+        if echo "$kernel_release" | grep -qi "WSL2\|microsoft.*WSL2"; then
+             memory_warning="WARNING: Detected WSL2 - Memory shown is VM virtual memory, not Windows host memory. Convert to WSL1 for real host memory access."
+             log_warning "$memory_warning"
         elif [ "$(echo "$mem_total_gb < 8" | bc)" -eq 1 ]; then
             # Memory less than 8GB might indicate a limit or WSL2
             memory_warning="WARNING: Memory total (${mem_total_gb}GB) seems low. If on WSL1, check for .wslconfig memory limits. If on WSL2, convert to WSL1 for real host memory."
@@ -261,42 +253,66 @@ collect_disk_metrics() {
     log_info "[3/10] Collecting Disk Metrics..."
     echo "[3/10] Collecting Disk Metrics..."
     
-    # Determine mount point
-    local mount_point="/"
-    if [ $IS_WSL -eq 1 ] && [ -d "/mnt/c" ]; then
-        mount_point="/mnt/c"
+    local disk_data_list=""
+    local primary_disk_found=0
+    
+    # Header for console
+    echo "  Filesystem      Mount Point     Total   Used    Avail   Usage"
+    echo "  -------------------------------------------------------------"
+
+    # Iterate over all relevant mounts
+    # using df -h and properly handling lines
+    while read -r line; do
+        if [ -n "$line" ]; then
+            local filesystem=$(echo "$line" | awk '{print $1}')
+            local size=$(echo "$line" | awk '{print $2}')
+            local used=$(echo "$line" | awk '{print $3}')
+            local avail=$(echo "$line" | awk '{print $4}')
+            local use_pct=$(echo "$line" | awk '{print $5}' | sed 's/%//')
+            local mount=$(echo "$line" | awk '{print $6}')
+
+            # Print to console
+            printf "  %-15s %-15s %-7s %-7s %-7s %s%%\n" "$filesystem" "$mount" "$size" "$used" "$avail" "$use_pct"
+
+            # Build list string (filesystem|mount|total|used|avail|percent)
+            if [ -z "$disk_data_list" ]; then
+                disk_data_list="${filesystem}|${mount}|${size}|${used}|${avail}|${use_pct}"
+            else
+                disk_data_list="${disk_data_list};${filesystem}|${mount}|${size}|${used}|${avail}|${use_pct}"
+            fi
+
+            # Keep 'C:' or '/' as primary metrics for CSV/Alerts
+            if [ "$primary_disk_found" -eq 0 ]; then
+                # Prefer /mnt/c or /
+                if [[ "$mount" == "/mnt/c" ]] || [[ "$mount" == "/" ]]; then
+                    METRICS[DISK_FILESYSTEM]="$filesystem"
+                    METRICS[DISK_MOUNT]="$mount"
+                    METRICS[DISK_TOTAL]="$size"
+                    METRICS[DISK_USED]="$used"
+                    METRICS[DISK_AVAILABLE]="$avail"
+                    METRICS[DISK_USED_PERCENT]="$use_pct"
+                    primary_disk_found=1
+                fi
+            fi
+        fi
+    done <<< "$(df -h | grep -E '^/|/mnt/' | grep -vE '^none|^tmpfs|^overlay')"
+
+    # Fallback if no primary found (use first one)
+    if [ "$primary_disk_found" -eq 0 ] && [ -n "$disk_data_list" ]; then
+        IFS=';' read -ra FIRST_DISK <<< "$disk_data_list"
+        IFS='|' read -ra F_DATA <<< "${FIRST_DISK[0]}"
+        METRICS[DISK_FILESYSTEM]="${F_DATA[0]}"
+        METRICS[DISK_MOUNT]="${F_DATA[1]}"
+        METRICS[DISK_TOTAL]="${F_DATA[2]}"
+        METRICS[DISK_USED]="${F_DATA[3]}"
+        METRICS[DISK_AVAILABLE]="${F_DATA[4]}"
+        METRICS[DISK_USED_PERCENT]="${F_DATA[5]}"
     fi
+
+    METRICS[DISK_DATA_LIST]="$disk_data_list"
     
-    # Get disk usage
-    local df_output=$(df -h "$mount_point" 2>/dev/null | tail -1)
-    local filesystem=$(echo "$df_output" | awk '{print $1}')
-    local total_size=$(echo "$df_output" | awk '{print $2}')
-    local used_size=$(echo "$df_output" | awk '{print $3}')
-    local available_size=$(echo "$df_output" | awk '{print $4}')
-    local use_percent=$(echo "$df_output" | awk '{print $5}' | sed 's/%//')
-    
-    if [ -z "$use_percent" ]; then
-        use_percent=0
-    fi
-    
-    # Store metrics
-    METRICS[DISK_FILESYSTEM]="$filesystem"
-    METRICS[DISK_MOUNT]="$mount_point"
-    METRICS[DISK_TOTAL]="$total_size"
-    METRICS[DISK_USED]="$used_size"
-    METRICS[DISK_AVAILABLE]="$available_size"
-    METRICS[DISK_USED_PERCENT]="$use_percent"
-    
-    # Display
-    echo "  Filesystem:     $filesystem"
-    echo "  Mount Point:    $mount_point"
-    echo "  Total Size:     $total_size"
-    echo "  Used:           $used_size"
-    echo "  Available:      $available_size"
-    echo "  Usage:          ${use_percent}%"
     echo ""
-    
-    log_info "Disk metrics collected: Filesystem=$filesystem, Mount=$mount_point, Usage=${use_percent}%"
+    log_info "Disk metrics collected for all drives"
 }
 
 # [4/10] SMART Status
@@ -456,8 +472,15 @@ collect_gpu_metrics() {
     local gpu_utilization="0"
     
     # Check for NVIDIA GPU
+    local nvidia_cmd=""
     if command -v nvidia-smi &>/dev/null; then
-        local nvidia_output=$(nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits 2>/dev/null)
+        nvidia_cmd="nvidia-smi"
+    elif command -v nvidia-smi.exe &>/dev/null; then
+        nvidia_cmd="nvidia-smi.exe"
+    fi
+
+    if [ -n "$nvidia_cmd" ]; then
+        local nvidia_output=$($nvidia_cmd --query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>/dev/null | tr -d '\r')
         if [ $? -eq 0 ] && [ -n "$nvidia_output" ]; then
             gpu_detected=1
             gpu_type="NVIDIA"
@@ -465,12 +488,16 @@ collect_gpu_metrics() {
             gpu_memory_used=$(echo "$nvidia_output" | cut -d',' -f2 | sed 's/^[ \t]*//')
             gpu_memory_total=$(echo "$nvidia_output" | cut -d',' -f3 | sed 's/^[ \t]*//')
             gpu_utilization=$(echo "$nvidia_output" | cut -d',' -f4 | sed 's/^[ \t]*//')
+            local gpu_temp=$(echo "$nvidia_output" | cut -d',' -f5 | sed 's/^[ \t]*//')
             
             echo "  GPU Type:       $gpu_type"
             echo "  GPU Name:       $gpu_name"
             echo "  Memory Used:    ${gpu_memory_used} MB"
             echo "  Memory Total:   ${gpu_memory_total} MB"
             echo "  Utilization:    ${gpu_utilization}%"
+            echo "  Temperature:    ${gpu_temp}°C"
+            
+            METRICS[GPU_TEMP]="$gpu_temp"
         fi
     fi
     
@@ -483,6 +510,19 @@ collect_gpu_metrics() {
             local vram_used_bytes=$(cat "$vram_used_file" 2>/dev/null || echo "0")
             local vram_total_bytes=$(cat "$vram_total_file" 2>/dev/null || echo "0")
             
+            # Try to find AMD temp file (best effort)
+            local amd_temp="N/A"
+            local temp_file="/sys/class/drm/card0/device/hwmon/hwmon*/temp1_input"
+            # referencing based on glob expansion which might not work directly in variable, 
+            # so we try to cat the first match if exists
+            local found_temp_file=$(ls /sys/class/drm/card0/device/hwmon/hwmon*/temp1_input 2>/dev/null | head -n 1)
+            if [ -n "$found_temp_file" ] && [ -r "$found_temp_file" ]; then
+                local raw_amd_temp=$(cat "$found_temp_file" 2>/dev/null)
+                if [ -n "$raw_amd_temp" ]; then
+                     amd_temp=$((raw_amd_temp / 1000))
+                fi
+            fi
+            
             if [ "$vram_total_bytes" -gt 0 ]; then
                 gpu_detected=1
                 gpu_type="AMD"
@@ -494,12 +534,17 @@ collect_gpu_metrics() {
                 echo "  GPU Name:       $gpu_name"
                 echo "  Memory Used:    ${gpu_memory_used} MB"
                 echo "  Memory Total:   ${gpu_memory_total} MB"
+                if [ "$amd_temp" != "N/A" ]; then
+                     echo "  Temperature:    ${amd_temp}°C"
+                     METRICS[GPU_TEMP]="$amd_temp"
+                fi
             fi
         fi
     fi
     
     if [ $gpu_detected -eq 0 ]; then
         echo "  GPU:            No GPU detected"
+        METRICS[GPU_TEMP]="N/A"
     fi
     
     # Store metrics
@@ -519,28 +564,48 @@ collect_temperature_metrics() {
     log_info "[8/10] Collecting Temperature Metrics..."
     echo "[8/10] Collecting Temperature Metrics..."
     
-    local temp_value="N/A"
-    local temp_source="N/A"
+    local temp_value=""
+    local temp_source=""
     
-    # Try sensors command first
-    if command -v sensors &>/dev/null; then
-        local sensors_output=$(sensors 2>/dev/null | grep -i "core\|cpu\|temp" | head -1)
-        if [ -n "$sensors_output" ]; then
-            temp_value=$(echo "$sensors_output" | grep -oE '[0-9]+\.[0-9]+°C' | head -1 | sed 's/°C//')
-            temp_source="sensors"
+    # --------------------------------------------------------------------------
+    # USER PROVIDED LOGIC: Real Sensor Check -> Smart Simulation Fallback
+    # --------------------------------------------------------------------------
+    
+    # 1. Try Real CPU Temp (lm-sensors)
+    # Using specific grep pattern from user snippet
+    local sensor_temp=$(sensors 2>/dev/null | grep -m 1 -E 'Package id 0:|Tctl:|Core 0:|temp1:' | awk '{print $2, $3, $4}' | grep -o '[0-9.]*' | head -n1)
+    
+    if [ -n "$sensor_temp" ]; then
+        # Remove floating point for integer arithmetic later or use bc
+        temp_value=$(echo "$sensor_temp" | cut -d. -f1)
+        temp_source="Real Sensor (lm-sensors)"
+    fi
+
+    # 2. Try Thermal Zone (if sensors failed)
+    if [ -z "$temp_value" ]; then
+        local raw_temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+        if [ -n "$raw_temp" ] && [ "$raw_temp" -gt 0 ]; then
+            temp_value=$((raw_temp / 1000))
+            temp_source="Real Sensor (thermal_zone)"
         fi
     fi
     
-    # Fallback to thermal zone
-    if [ "$temp_value" = "N/A" ] || [ -z "$temp_value" ]; then
-        local thermal_file="/sys/class/thermal/thermal_zone0/temp"
-        if [ -r "$thermal_file" ]; then
-            local temp_millidegrees=$(cat "$thermal_file" 2>/dev/null || echo "0")
-            if [ "$temp_millidegrees" -gt 0 ]; then
-                temp_value=$(echo "scale=1; $temp_millidegrees / 1000" | bc)
-                temp_source="thermal_zone0"
-            fi
+    # 3. Smart Simulation (AESL Case / Fallback)
+    # Logic: Base Temp (42) + (CPU Load / 3) + Random Jitter (0-3)
+    if [ -z "$temp_value" ] || [ "$temp_value" -eq 0 ]; then
+        local cpu_usage="${METRICS[CPU_USAGE]}"
+        local usage_int=0
+        if [ -n "$cpu_usage" ]; then
+             usage_int=$(echo "$cpu_usage" | cut -d. -f1)
         fi
+        
+        # Jitter calculation
+        local jitter=$((RANDOM % 3))
+        local added_heat=$((usage_int / 3))
+        local simulated_temp=$((42 + added_heat + jitter))
+        
+        temp_value="$simulated_temp"
+        temp_source="Smart Simulation (Load + Jitter)"
     fi
     
     # Store metrics
@@ -548,11 +613,7 @@ collect_temperature_metrics() {
     METRICS[TEMPERATURE_SOURCE]="$temp_source"
     
     # Display
-    if [ "$temp_value" != "N/A" ] && [ -n "$temp_value" ]; then
-        echo "  Temperature:    ${temp_value}°C (from $temp_source)"
-    else
-        echo "  Temperature:    Not available"
-    fi
+    echo "  Temperature:    ${temp_value}°C (from $temp_source)"
     echo ""
     
     log_info "Temperature metrics collected: Temp=${temp_value}°C, Source=$temp_source"
@@ -655,11 +716,17 @@ check_critical_alerts() {
 export_csv_data() {
     log_info "Exporting CSV data..."
     
-    local csv_header="Timestamp,CPU_Usage(%),Memory_Total(GB),Memory_Used(GB),Memory_Free(GB),Memory_Used(%),Disk_Used(%),Process_Count,Load_1m,Uptime_Days"
+    # Updated header to reflect multi-disk summary, GPU metrics, and Temperatures
+    local csv_header="Timestamp,CPU_Usage(%),Memory_Total(GB),Memory_Used(GB),Memory_Free(GB),Memory_Used(%),Disk_Usage_Summary,GPU_Utilization(%),GPU_Memory_Used(MB),CPU_Temp(C),GPU_Temp(C),Process_Count,Load_1m,Uptime_Days"
     
     # Create CSV file with header if it doesn't exist
     if [ ! -f "$CSV_FILE" ]; then
         echo "$csv_header" > "$CSV_FILE"
+    else
+        # Optional: Check if header matches (simple heuristic) - if old header, maybe backup or warn?
+        # For this simplified script, we assume append is fine, but strictly speaking checking headers is safer.
+        # We will just append.
+        :
     fi
     
     # Prepare data row
@@ -669,13 +736,44 @@ export_csv_data() {
     local mem_used="${METRICS[MEM_USED]}"
     local mem_free="${METRICS[MEM_FREE]}"
     local mem_used_percent="${METRICS[MEM_USED_PERCENT]}"
-    local disk_used_percent="${METRICS[DISK_USED_PERCENT]}"
+    
+    # Hardware Stats
+    local gpu_util="${METRICS[GPU_UTILIZATION]}"
+    local gpu_mem="${METRICS[GPU_MEMORY_USED]}"
+    if [ -z "$gpu_util" ]; then gpu_util="0"; fi
+    if [ -z "$gpu_mem" ]; then gpu_mem="0"; fi
+    
+    local cpu_temp="${METRICS[TEMPERATURE]}"
+    local gpu_temp="${METRICS[GPU_TEMP]}"
+    if [ -z "$cpu_temp" ]; then cpu_temp="N/A"; fi
+    if [ -z "$gpu_temp" ]; then gpu_temp="N/A"; fi
+
+    # Build Multi-Disk Summary
+    local disk_summary=""
+    if [ -n "${METRICS[DISK_DATA_LIST]}" ]; then
+        IFS=';' read -ra DISKS <<< "${METRICS[DISK_DATA_LIST]}"
+        for disk in "${DISKS[@]}"; do
+             IFS='|' read -ra DSK <<< "$disk"
+             if [ ${#DSK[@]} -ge 6 ]; then
+                 local mount=${DSK[1]}
+                 local pct=${DSK[5]}
+                 if [ -z "$disk_summary" ]; then
+                     disk_summary="${mount}:${pct}%"
+                 else
+                     disk_summary="${disk_summary}|${mount}:${pct}%"
+                 fi
+             fi
+        done
+    else
+        disk_summary="N/A"
+    fi
+    
     local process_count="${METRICS[PROCESS_COUNT]}"
     local load_1m="${METRICS[LOAD_1M]}"
     local uptime_days="${METRICS[UPTIME_DAYS]}"
     
     # Append data row
-    echo "${timestamp},${cpu_usage},${mem_total},${mem_used},${mem_free},${mem_used_percent},${disk_used_percent},${process_count},${load_1m},${uptime_days}" >> "$CSV_FILE"
+    echo "${timestamp},${cpu_usage},${mem_total},${mem_used},${mem_free},${mem_used_percent},${disk_summary},${gpu_util},${gpu_mem},${cpu_temp},${gpu_temp},${process_count},${load_1m},${uptime_days}" >> "$CSV_FILE"
     
     log_info "CSV data exported to $CSV_FILE"
 }
@@ -689,8 +787,9 @@ generate_html_report() {
     
     local hostname=$(hostname 2>/dev/null || echo "Unknown")
     local os_info=""
-    if [ $IS_WSL -eq 1 ]; then
-        os_info="WSL1 (Windows Subsystem for Linux)"
+    # Determine if running in WSL
+    if grep -qEi "(microsoft|wsl)" /proc/version &>/dev/null; then
+        os_info="WSL (Windows Subsystem for Linux)"
     else
         os_info=$(cat /etc/os-release 2>/dev/null | grep "^PRETTY_NAME" | cut -d= -f2 | tr -d '"' || echo "Linux")
     fi
@@ -983,31 +1082,51 @@ generate_html_report() {
             <!-- Disk Usage -->
             <div class="section">
                 <h2>Disk Usage</h2>
-                <div class="metric-grid">
-                    <div class="metric-item">
-                        <div class="metric-label">Filesystem</div>
-                        <div class="metric-value">${METRICS[DISK_FILESYSTEM]}</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Mount Point</div>
-                        <div class="metric-value">${METRICS[DISK_MOUNT]}</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Total Size</div>
-                        <div class="metric-value">${METRICS[DISK_TOTAL]}</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Used</div>
-                        <div class="metric-value">${METRICS[DISK_USED]}</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Available</div>
-                        <div class="metric-value">${METRICS[DISK_AVAILABLE]}</div>
-                    </div>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill ${disk_progress_class}" style="width: ${METRICS[DISK_USED_PERCENT]}%">${METRICS[DISK_USED_PERCENT]}%</div>
-                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Filesystem</th>
+                            <th>Mount Point</th>
+                            <th>Total</th>
+                            <th>Used</th>
+                            <th>Available</th>
+                            <th>Usage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+EOF
+    # Add disk rows
+    if [ -n "${METRICS[DISK_DATA_LIST]}" ]; then
+        IFS=';' read -ra DISKS <<< "${METRICS[DISK_DATA_LIST]}"
+        for disk in "${DISKS[@]}"; do
+            IFS='|' read -ra DSK <<< "$disk"
+            if [ ${#DSK[@]} -ge 6 ]; then
+                # Determine color for usage
+                local usage_val=${DSK[5]}
+                local usage_style=""
+                if [ "$usage_val" -gt 90 ]; then
+                    usage_style="style=\"color: #f44336; font-weight: bold;\""
+                elif [ "$usage_val" -gt 75 ]; then
+                     usage_style="style=\"color: #ff9800; font-weight: bold;\""
+                fi
+
+                echo "                        <tr>" >> "$HTML_REPORT"
+                echo "                            <td>${DSK[0]}</td>" >> "$HTML_REPORT"
+                echo "                            <td>${DSK[1]}</td>" >> "$HTML_REPORT"
+                echo "                            <td>${DSK[2]}</td>" >> "$HTML_REPORT"
+                echo "                            <td>${DSK[3]}</td>" >> "$HTML_REPORT"
+                echo "                            <td>${DSK[4]}</td>" >> "$HTML_REPORT"
+                echo "                            <td $usage_style>${DSK[5]}%</td>" >> "$HTML_REPORT"
+                echo "                        </tr>" >> "$HTML_REPORT"
+            fi
+        done
+    else
+        echo "                        <tr><td colspan=\"6\">No disk information available</td></tr>" >> "$HTML_REPORT"
+    fi
+    
+    cat >> "$HTML_REPORT" << EOF
+                    </tbody>
+                </table>
             </div>
             
             <!-- Network Interfaces -->

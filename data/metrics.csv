@@ -1,0 +1,3 @@
+Timestamp,CPU_Usage(%),Memory_Total(GB),Memory_Used(GB),Memory_Free(GB),Memory_Used(%),Swap_Total(GB),Swap_Used(GB),Disk_Usage_Summary,GPU_Utilization(%),GPU_Memory_Used(MB),CPU_Temp(C),GPU_Temp(C),Process_Count,Load_1m,Uptime_Days
+2025-12-12 02:26:53,21.02,23.62,11.66,11.96,49.36,24.00,.07,/mnt/c:61%|/mnt/d:65%,0,747,51,52,9,0.52,0
+2025-12-12 02:27:49,10.05,23.62,11.47,12.15,48.56,24.00,.07,/mnt/c:61%|/mnt/d:65%,0,737,47,50,8,0.52,0
