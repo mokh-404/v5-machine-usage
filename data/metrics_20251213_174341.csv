@@ -1,0 +1,2 @@
+Timestamp,CPU_Model,CPU_Cores,CPU_Usage,Mem_Total,Mem_Used,Mem_Percent,Disk_Percent,Temp,GPU_Name
+20251213_174341,AMD Ryzen 7 7435HS                             ,16,36.45,23.82,13.70,57.51,97,N/A,N/A

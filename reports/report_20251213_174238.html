@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Monitoring Report</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+        
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .metric-item {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .metric-label {
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        
+        .metric-value {
+            font-size: 1.3em;
+            color: #333;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 25px;
+            background: #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50, #8bc34a);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.9em;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-fill.warning {
+            background: linear-gradient(90deg, #ff9800, #ffc107);
+        }
+        
+        .progress-fill.critical {
+            background: linear-gradient(90deg, #f44336, #e91e63);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        table th, table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        table th {
+            background: #667eea;
+            color: white;
+            font-weight: bold;
+        }
+        
+        table tr:hover {
+            background: #f5f5f5;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        
+        .status-success {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .status-warning {
+            background: #ff9800;
+            color: white;
+        }
+        
+        .status-danger {
+            background: #f44336;
+            color: white;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .metric-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>System Monitoring Report</h1>
+            <p>Comprehensive System Monitoring Solution - Arab Academy 12th Project</p>
+        </div>
+        
+        <div class="content">
+            <!-- System Information -->
+            <div class="section">
+                <h2>System Information</h2>
+                <div class="metric-grid">
+                    <div class="metric-item">
+                        <div class="metric-label">Hostname</div>
+                        <div class="metric-value">LAPTOP-7I18QK4G</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Operating System</div>
+                        <div class="metric-value">WSL1 (Windows Subsystem for Linux)</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Report Time</div>
+                        <div class="metric-value">2025-12-13 17:42:41</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Uptime</div>
+                        <div class="metric-value">0d 0h 0m</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- CPU Performance -->
+            <div class="section">
+                <h2>CPU Performance</h2>
+                <div class="metric-grid">
+                    <div class="metric-item">
+                        <div class="metric-label">CPU Model</div>
+                        <div class="metric-value">AMD Ryzen 7 7435HS                             </div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">CPU Cores</div>
+                        <div class="metric-value">16</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">CPU Usage</div>
+                        <div class="metric-value">33.27%</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Load Average (1m)</div>
+                        <div class="metric-value">0.52</div>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 33.27%">33.27%</div>
+                </div>
+            </div>
+            
+            <!-- Memory Consumption -->
+            <div class="section">
+                <h2>Memory Consumption</h2>
+                <div class="metric-grid">
+                    <div class="metric-item">
+                        <div class="metric-label">Total Memory</div>
+                        <div class="metric-value">23.82 GB</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Used Memory</div>
+                        <div class="metric-value">13.69 GB</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Free Memory</div>
+                        <div class="metric-value">10.13 GB</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Available Memory</div>
+                        <div class="metric-value">10.13 GB</div>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill " style="width: 57.47%">57.47%</div>
+                </div>
+            </div>
+            
+            <!-- Disk Usage -->
+            <div class="section">
+                <h2>Disk Usage</h2>
+                <div class="metric-grid">
+                    <div class="metric-item">
+                        <div class="metric-label">Filesystem</div>
+                        <div class="metric-value">C:\</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Mount Point</div>
+                        <div class="metric-value">/mnt/c</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Total Size</div>
+                        <div class="metric-value">253G</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Used</div>
+                        <div class="metric-value">243G</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Available</div>
+                        <div class="metric-value">9.6G</div>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill critical" style="width: 97%">97%</div>
+                </div>
+            </div>
+            
+            <!-- Network Interfaces -->
+            <div class="section">
+                <h2>Network Interfaces</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Interface</th>
+                            <th>RX (MB)</th>
+                            <th>TX (MB)</th>
+                            <th>RX Packets</th>
+                            <th>TX Packets</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="5">No network interfaces found</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Process Information -->
+            <div class="section">
+                <h2>Process Information</h2>
+                <div class="metric-item">
+                    <div class="metric-label">Total Processes</div>
+                    <div class="metric-value">7</div>
+                </div>
+                <h3 style="margin-top: 20px; margin-bottom: 10px;">Top 5 Processes by Memory</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>PID</th>
+                            <th>User</th>
+                            <th>Memory %</th>
+                            <th>Command</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>9</td>
+                            <td>mokh-404</td>
+                            <td>0.0%</td>
+                            <td>/bin/bash system_monitor.sh</td>
+                        </tr>
+                        <tr>
+                            <td>209</td>
+                            <td>mokh-404</td>
+                            <td>0.0%</td>
+                            <td>ps aux --sort=-%mem</td>
+                        </tr>
+                        <tr>
+                            <td>1</td>
+                            <td>root</td>
+                            <td>0.0%</td>
+                            <td>/init</td>
+                        </tr>
+                        <tr>
+                            <td>211</td>
+                            <td>mokh-404</td>
+                            <td>0.0%</td>
+                            <td>tail -5</td>
+                        </tr>
+                        <tr>
+                            <td>210</td>
+                            <td>mokh-404</td>
+                            <td>0.0%</td>
+                            <td>head -6</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- System Temperature -->
+            <div class="section">
+                <h2>System Temperature</h2>
+                <div class="metric-item">
+                    <div class="metric-label">Temperature</div>
+                    <div class="metric-value">N/A°C</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Source</div>
+                    <div class="metric-value">N/A</div>
+                </div>
+            </div>
+            
+            <!-- GPU Status -->
+            <div class="section">
+                <h2>GPU Status</h2>
+                <div class="metric-item">
+                    <div class="metric-value">No GPU detected</div>
+                </div>
+            </div>
+            
+            <!-- SMART Status -->
+            <div class="section">
+                <h2>SMART Status</h2>
+                <div class="metric-item">
+                    <div class="metric-label">Status</div>
+                    <div class="metric-value">Not Available</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Health</div>
+                    <div class="metric-value"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Report generated on 2025-12-13 17:42:41</p>
+            <p>System Monitoring Solution - Arab Academy 12th Project</p>
+        </div>
+    </div>
+</body>
+</html>
